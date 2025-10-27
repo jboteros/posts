@@ -32,10 +32,11 @@ Slack, Discord, soporte, reviews en la App Store, incluso mensajes directos de u
 > “Se queda en blanco después del splash.”  
 > “En Android no abre.”
 
-Corres a revisar logs… y no tienes idea de:  
-- Qué versión de la app está fallando.  
-- En qué dispositivos ocurre.  
-- Qué versión del sistema operativo usan.  
+Corres a revisar logs… y no tienes idea de:
+
+- Qué versión de la app está fallando.
+- En qué dispositivos ocurre.
+- Qué versión del sistema operativo usan.
 - Ni siquiera si el error viene de una build nueva o antigua.
 
 Sin observabilidad, **el diagnóstico se vuelve un juego de adivinanzas**.  
@@ -53,7 +54,7 @@ Ahora que hemos visto el problema, entendamos por qué React Native puede ser es
 React Native es increíble: nos permite entregar features rápidas, multiplataforma, con una base de código compartida.  
 Pero esa agilidad tiene un costo: sin una arquitectura clara y sin observabilidad, **los errores pueden propagarse como fuego en un bosque seco**.
 
-He visto equipos que miden su éxito por la cantidad de features entregadas, y otros que miden su éxito por la cantidad de **crashes prevenidos**. 
+He visto equipos que miden su éxito por la cantidad de features entregadas, y otros que miden su éxito por la cantidad de **crashes prevenidos**.
 👉 Adivina cuáles duermen mejor.
 
 ---
@@ -67,10 +68,11 @@ Ahora que entendemos el problema, veamos las soluciones prácticas que puedes im
 No esperes a tener problemas para instalar **Sentry**, **Firebase Crashlytics** o **Bugsnag**.  
 La observabilidad no es opcional — es el equivalente a tener un tablero de instrumentos en tu avión.
 
-Más allá de capturar errores, el valor está en **entender su contexto**:  
-- ¿Qué versión de la app los causa?  
-- ¿Qué dispositivo?  
-- ¿Cuál fue la acción del usuario antes del crash?  
+Más allá de capturar errores, el valor está en **entender su contexto**:
+
+- ¿Qué versión de la app los causa?
+- ¿Qué dispositivo?
+- ¿Cuál fue la acción del usuario antes del crash?
 
 Un `captureException()` bien implementado, con tags personalizados (versión, entorno, usuario, feature) te permite detectar patrones y prevenir el próximo incendio.
 
@@ -132,8 +134,8 @@ const handleUpdateProfile = async (user: User) => {
 
 ### 🧩 **Por qué funciona**
 
-> - 🧠 **`addBreadcrumb` captura el contexto del usuario** justo antes del error, permitiéndote saber qué acción ejecutó y con qué datos.  
-> - 🧾 **Las acciones exitosas también dejan trazas**, lo que ayuda a auditar y entender flujos reales de usuario.  
+> - 🧠 **`addBreadcrumb` captura el contexto del usuario** justo antes del error, permitiéndote saber qué acción ejecutó y con qué datos.
+> - 🧾 **Las acciones exitosas también dejan trazas**, lo que ayuda a auditar y entender flujos reales de usuario.
 > - 🏷️ **`tags`** permiten agrupar y filtrar errores para separar alertas entre diferentes features de la app, versiones o segmentos de usuarios.
 > - 🧰 **`extra`** agrega datos adicionales relevantes al error (como el ID de usuario, parámetros o estado local), facilitando el análisis y la resolución más rápida de incidentes.
 
@@ -143,8 +145,8 @@ const handleUpdateProfile = async (user: User) => {
 
 Cada build debería pasar por una línea base de seguridad:
 
-- 🧪 **Testing E2E (Detox o Maestro):** simula los flujos más críticos (onboarding, login, checkout).  
-- 🧩 **Lint y type-checking en CI:** rompe el build si hay errores no tipados o promesas sin manejar.  
+- 🧪 **Testing E2E (Detox o Maestro):** simula los flujos más críticos (onboarding, login, checkout).
+- 🧩 **Lint y type-checking en CI:** rompe el build si hay errores no tipados o promesas sin manejar.
 - 🚀 **Feature flags:** lanza cambios gradualmente con herramientas como **ConfigCat**, **LaunchDarkly** o incluso tu propio backend.
 
 > ⚙️ **La automatización no reemplaza el juicio humano**,  
@@ -206,11 +208,11 @@ Cada vez que dices _"solo pasó una vez"_, estás dejando crecer una grieta que 
 
 Hoy puedes elegir entre dos caminos:
 
-- 🏃 **Seguir construyendo features** hasta que la app se vuelva inmanejable.  
+- 🏃 **Seguir construyendo features** hasta que la app se vuelva inmanejable.
 - 🧱 **Empezar a construir resiliencia**, línea a línea, práctica a práctica.
 
 Tu app puede seguir funcionando "por ahora".  
-O puede **seguir viva dentro de un año**, sin importar el release, el framework o el device.  
+O puede **seguir viva dentro de un año**, sin importar el release, el framework o el device.
 
 ---
 
