@@ -1,9 +1,941 @@
 ---
-title: 10 checks for stable React Native apps in production.
+title: 10 checks for stable React Native apps in production
 description: Most teams celebrate when the build passes. Mature teams celebrate when the crash rate drops.
+date: "2025-10-28"
 published: true
 language: en
 ---
 
-description: Most teams celebrate when the build passes. Mature teams celebrate when the crash rate drops.
+![](/cover-images/10-checks-para-apps-react-native-estables-en-produccion.webp)
 
+### 🧠 From concepts to practical implementation
+
+If you've already read about the **5 practices for stable apps**, you probably want to see more technical details. Here are the **10 concrete checks** that every React Native team should validate before each release.
+
+These aren't just "good ideas", they're **real validations** with code you can copy and adapt to your project today.
+
+---
+
+## 📋 What to expect from this checklist
+
+Each check includes:
+
+1. **📖 Why it matters** - The non-technical context to understand the value
+2. **🔧 How to implement it** - Specific code you can use today
+3. **✅ Best practices** - Tips to avoid common mistakes
+
+This checklist is designed to be your **prerelease gate**: a validation list you review before each production release. You don't need to implement all of them at once—start with the first 3 and gradually add the rest.
+
+**Each check reduces the risk of an incident in production.** Think of it as a safety checklist for your team: it's not bureaucracy, it's protection.
+
+---
+
+## 1️⃣ Crash rate under control
+
+### 📖 Why it matters
+
+A crash is urgent—there’s no second chance. Crash-free rate above 99.5% is the goal.
+
+### 🔧 How to implement it
+
+Use tools like **Sentry**, **Firebase Crashlytics** or **Bugsnag** to monitor each release.
+
+**Basic configuration with Sentry:**
+
+```tsx
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'YOUR_DSN_HERE',
+  debug: __DEV__, // Only in development
+  tracesSampleRate: 1.0, // 100% sampling for sessions
+});
+
+// Identify release and distribution
+flatMap(
+  appInfo => {
+    Sentry.setRelease(`${appInfo.version}-${appInfo.buildNumber}`);
+    Sentry.setDist(appInfo.buildNumber);
+  }
+)(Application.nativeApplicationVersion)();
+
+// Capture JavaScript errors
+Sentry.captureException(error, {
+  tags: { section: 'Checkout' },
+  extra: { userId: user.id },
+});
+```
+
+**🚨 Avoid this:**
+- Don't capture EVERYTHING (filter expected errors)
+- Don't store sensitive user data in logs
+- Don't wait to have crashes to implement monitoring
+
+**✅ Best practices:**
+- Implement `setRelease()` and `setDist()` to identify which version introduced an error
+- Group errors by session and user
+- Configure alerts when crash rate exceeds 0.5%
+
+---
+
+## 2️⃣ Centralized error handling
+
+### 📖 Why it matters
+
+You already know that `addBreadcrumb()` and `captureException()` are essential in your critical functions (check #2 from the previous article). But here's something more: a **global** error handler that captures exceptions you didn't even know existed.
+
+Silent errors are like termites: you don't see them until they break the whole structure. Centralized error handling captures ALL exceptions—JavaScript, Native, rejected promises, and network errors—so nothing escapes you.
+
+### 🔧 How to implement it
+
+Define a global `errorHandler` that captures all types of errors.
+
+**Dependency installation:**
+```bash
+npm install react-native-exception-handler @sentry/react-native
+```
+
+**Complete error handler setup:**
+
+```tsx
+import { setJSExceptionHandler, setNativeExceptionHandler } from 'react-native-exception-handler';
+import * as Sentry from '@sentry/react-native';
+
+// Handler for JavaScript errors
+const errorHandler = (e: Error, isFatal: boolean) => {
+  if (isFatal) {
+    Sentry.captureException(e, {
+      tags: { type: 'JSException' },
+      level: 'fatal',
+    });
+    
+    Alert.alert(
+      'Fatal error',
+      'Sorry, the app needs to restart.',
+      [{ text: 'Close' }]
+    );
+  } else {
+    // Non-fatal error, just log
+    Sentry.captureException(e, {
+      tags: { type: 'JSException' },
+      level: 'error',
+    });
+  }
+};
+
+setJSExceptionHandler(errorHandler, true);
+
+// Handler for native errors
+setNativeExceptionHandler(exceptionString => {
+  Sentry.captureMessage(exceptionString, {
+    tags: { type: 'NativeException' },
+    level: 'fatal',
+  });
+});
+
+// Capture rejected promises without catch
+Promise.prototype.catch = function(originalCatch) {
+  return function(error: Error) {
+    Sentry.captureException(error, {
+      tags: { type: 'UnhandledPromise' },
+    });
+    return originalCatch.call(this, error);
+  };
+}(Promise.prototype.catch);
+```
+
+**🧩 Practical example with breadcrumbs:**
+
+```tsx
+const handleUpdateProfile = async (user: User) => {
+  // Record user's intention
+  Sentry.addBreadcrumb({
+    category: 'user.action',
+    message: 'User attempts to update profile',
+    level: 'info',
+    data: { userId: user.id },
+  });
+
+  try {
+    await api.updateProfile(user);
+    
+    Sentry.addBreadcrumb({
+      category: 'api.success',
+      message: 'Profile updated successfully',
+      level: 'info',
+    });
+    
+    Alert.alert('✅ Profile updated');
+  } catch (error) {
+    Sentry.captureException(error, {
+      tags: { section: 'ProfileUpdate' },
+      extra: { userId: user.id, email: user.email },
+    });
+
+    Alert.alert('❌ Error updating your profile. Please try again.');
+  }
+};
+```
+
+**✅ Best practices:**
+- Differentiate between recoverable errors (show a fallback) and critical errors (report and stop)
+- Add user context and previous action with breadcrumbs
+- Use tags to group errors by feature or section
+
+---
+
+## 3️⃣ Versioning and build tracking
+
+### 📖 Why it matters
+
+Imagine a user reports a bug and you don't know what version of the app they're using. It's like looking for a needle in a haystack. Each build must have a unique identifier visible so QA, support, or users can report problems accurately.
+
+### 🔧 How to implement it
+
+Each build must have a unique identifier visible on screen (profile view or "about" page).
+
+**Installation:**
+```bash
+npm install expo-application
+# Or if you don't use Expo:
+npm install react-native-device-info
+```
+
+**App info screen:**
+
+```tsx
+import * as Application from 'expo-application';
+import { Text, View, TouchableOpacity } from 'react-native';
+
+const AboutScreen = () => {
+  const version = Application.nativeApplicationVersion;
+  const buildNumber = Application.nativeBuildVersion;
+  
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={{ fontSize: 16, marginBottom: 10 }}>
+        Version: {version} ({buildNumber})
+      </Text>
+      
+      {/* Allow copying info for reporting */}
+      <TouchableOpacity onPress={() => Clipboard.setString(`${version}-${buildNumber}`)}>
+        <Text>📋 Copy version information</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+```
+
+**Integrate with Sentry for automatic context:**
+
+```tsx
+// In your initialization file (index.js or App.tsx)
+import * as Application from 'expo-application';
+
+Sentry.setContext('app', {
+  version: Application.nativeApplicationVersion,
+  build: Application.nativeBuildVersion,
+  deviceModel: Device.modelName,
+  osVersion: Device.osVersion,
+});
+```
+
+**✅ Best practices:**
+- Show version + build number in readable format (e.g., "1.2.3 (456)")
+- Allow copying to clipboard with a tap
+- Include build date if possible
+- Make sure it's visible in multiple screens
+
+---
+
+## 4️⃣ Active feature flags and quick rollback
+
+### 📖 Why it matters
+
+Imagine being able to disable a problematic feature without waiting days for stores to approve a new build? Feature flags give you that superpower. Never release a feature directly to all users: configure flags that allow you to enable or disable features without publishing a new version.
+
+### 🔧 How to implement it
+
+Configure **feature flags** with **ConfigCat**, **LaunchDarkly** or your own backend.
+
+**Example with ConfigCat:**
+
+```bash
+npm install configcat-react-native
+```
+
+```tsx
+import { withConfigCatProvider, useFeatureFlag } from 'configcat-react-native';
+
+const configCatKey = 'YOUR_CONFIGCAT_KEY';
+
+// Wrap your App
+export default withConfigCatProvider(App, configCatKey);
+
+// Use in any component
+const MyComponent = () => {
+  const { value: newFeatureEnabled, loading } = useFeatureFlag('NEW_FEATURE', false);
+  
+  if (loading) return <Loading />;
+  
+  return (
+    <>
+      {newFeatureEnabled ? (
+        <NewFeatureUI />
+      ) : (
+        <OldFeatureUI />
+      )}
+    </>
+  );
+};
+```
+
+**Simple implementation without external services:**
+
+```tsx
+// services/FeatureFlags.ts
+class FeatureFlagService {
+  private flags: Record<string, boolean> = {};
+  
+  async fetchFlags() {
+    try {
+      const response = await fetch('https://your-api.com/feature-flags');
+      const data = await response.json();
+      this.flags = data;
+    } catch (error) {
+      console.error('Error fetching flags:', error);
+      // Use default values in case of error
+    }
+  }
+  
+  isEnabled(flag: string): boolean {
+    return this.flags[flag] ?? false;
+  }
+  
+  async updateFlag(flag: string, enabled: boolean) {
+    this.flags[flag] = enabled;
+  }
+}
+
+export const featureFlags = new FeatureFlagService();
+
+// Usage in components
+const { isEnabled } = featureFlags;
+
+if (isEnabled('SHOW_CHECKOUT_V2')) {
+  return <CheckoutV2 />;
+}
+```
+
+**✅ Best practices:**
+- Implement default values (fallback) if the flag service fails
+- Version your flags to maintain compatibility
+- Monitor the usage of each flag to decide when to remove legacy code
+- Consider flags per user or percentage rollout
+
+---
+
+## 5️⃣ Contextual logging
+
+### 📖 Why it matters
+
+You already implemented `addBreadcrumb()` in critical functions. Now let's scale it: create a centralized logging system that captures context in the ENTIRE app, not just in the points where you manually add it.
+
+"The payment button doesn't work" tells you nothing. "The user tapped the payment button after 3 retries, Gmail open in background, iOS 15.2" does.
+
+Logs without context are like maps without landmarks. They tell you something failed, but not why or how you got there.
+
+### 🔧 How to implement it
+
+Capture useful logs, not noise.
+
+**Structure a logging system with levels:**
+
+```tsx
+enum LogLevel {
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARNING = 'warning',
+  ERROR = 'error',
+}
+
+class Logger {
+  log(level: LogLevel, message: string, context?: Record<string, any>) {
+    const timestamp = new Date().toISOString();
+    
+    // In development: console
+    if (__DEV__) {
+      console.log(`[${level.toUpperCase()}] ${timestamp}:`, message, context);
+    }
+    
+    // In production: Sentry
+    if (level === LogLevel.ERROR) {
+      Sentry.captureMessage(message, {
+        level: level as Sentry.Severity,
+        extra: context,
+      });
+    } else {
+      Sentry.addBreadcrumb({
+        category: level,
+        message,
+        level: level as Sentry.Severity,
+        data: context,
+      });
+    }
+  }
+  
+  debug(message: string, context?: Record<string, any>) {
+    this.log(LogLevel.DEBUG, message, context);
+  }
+  
+  info(message: string, context?: Record<string, any>) {
+    this.log(LogLevel.INFO, message, context);
+  }
+  
+  error(message: string, context?: Record<string, any>) {
+    this.log(LogLevel.ERROR, message, context);
+  }
+}
+
+export const logger = new Logger();
+
+// Usage in your app
+logger.info('User started checkout', {
+  userId: user.id,
+  cartItems: cart.items.length,
+});
+
+logger.debug('API call started', {
+  endpoint: '/api/checkout',
+  method: 'POST',
+  payloadSize: JSON.stringify(payload).length,
+});
+```
+
+**Capture user context:**
+
+```tsx
+// Configure user context at login
+Sentry.setUser({
+  id: user.id,
+  email: user.email,
+  username: user.username,
+});
+
+// Add global app context
+Sentry.setContext('device', {
+  model: Device.modelName,
+  osVersion: Device.osVersion,
+  memory: Device.totalMemory,
+  networkType: await getNetworkType(),
+});
+
+// Breadcrumbs for navigation
+const navigationBreadcrumb = (screenName: string) => {
+  Sentry.addBreadcrumb({
+    category: 'navigation',
+    message: `User navigated to ${screenName}`,
+    level: 'info',
+  });
+};
+```
+
+**✅ Best practices:**
+- Don't log sensitive data (passwords, tokens, cards)
+- Use appropriate levels (debug for dev, error for critical production)
+- Clean old logs to avoid memory accumulation
+- Include timestamps and trace IDs for distributed debugging
+
+---
+
+## 6️⃣ Real performance tracking
+
+### 📖 Why it matters
+
+An app that works but is slow is a broken app from the user's perspective. Measure what matters: load time, network latency, JS thread and FPS. If you don't measure, you can't improve.
+
+**Example:** Users abandon if a screen takes more than 3 seconds to load. Tracking performance metrics allows you to identify bottlenecks before they reach production.
+
+### 🔧 How to implement it
+
+Use **Flipper**, **Sentry Performance** or **React Native Performance Monitor**.
+
+**Basic configuration with Sentry Performance:**
+
+```tsx
+import * as Sentry from '@sentry/react-native';
+
+// Track transactions (screens, flows)
+const loadProfileTransaction = Sentry.startTransaction({
+  name: 'LoadProfile',
+  op: 'navigation',
+});
+
+// Track spans (specific operations)
+const fetchUserSpan = loadProfileTransaction.startChild({
+  op: 'http.client',
+  description: 'GET /api/user',
+});
+
+try {
+  const user = await api.getUser();
+  fetchUserSpan.setHttpStatus(200);
+} catch (error) {
+  fetchUserSpan.setHttpStatus(error.response?.status || 500);
+  Sentry.captureException(error);
+} finally {
+  fetchUserSpan.finish();
+  loadProfileTransaction.finish();
+}
+```
+
+**Measure screen load time:**
+
+```tsx
+import { useEffect } from 'react';
+import { InteractionManager } from 'react-native';
+
+const useScreenLoadTime = (screenName: string) => {
+  useEffect(() => {
+    const startTime = performance.now();
+    
+    InteractionManager.runAfterInteractions(() => {
+      const loadTime = performance.now() - startTime;
+      
+      Sentry.addBreadcrumb({
+        category: 'performance',
+        message: `${screenName} loaded in ${loadTime.toFixed(0)}ms`,
+        data: { loadTime },
+      });
+      
+      // Alert if too slow
+      if (loadTime > 3000) {
+        Sentry.captureMessage(`Slow screen load: ${screenName}`, {
+          level: 'warning',
+          extra: { loadTime },
+        });
+      }
+    });
+  }, []);
+};
+
+// Usage in component
+const ProfileScreen = () => {
+  useScreenLoadTime('ProfileScreen');
+  // ... rest of component
+};
+```
+
+**Measure FPS (Frames Per Second):**
+
+```tsx
+// For real-time performance monitor
+import { useFPSMetrics } from 'react-native-performance-monitor';
+
+const MyComponent = () => {
+  const fps = useFPSMetrics();
+  
+  useEffect(() => {
+    if (fps < 30) {
+      Sentry.addBreadcrumb({
+        category: 'performance',
+        message: 'Low FPS detected',
+        data: { fps },
+      });
+    }
+  }, [fps]);
+  
+  return null; // Invisible component
+};
+```
+
+**✅ Best practices:**
+- Aim for a **TTI (Time To Interactive)** less than 5 seconds on medium devices
+- Track metrics on real devices, not just simulators
+- Configure alerts for performance degradation
+- Measure before and after optimizations to validate impact
+
+---
+
+## 7️⃣ Automated testing in CI/CD
+
+### 📖 Why it matters
+
+In the previous article we mentioned "automate what saves you" with E2E testing and CI. But how do you actually configure it? Here's the complete setup.
+
+A bug detected in CI costs 10 minutes of your time. The same bug in production costs hours of debugging, team stress, and loss of user trust. Each build must pass E2E tests, linting and type checking. Break the build if something fails: it's cheaper to stop an error in CI than in production.
+
+### 🔧 How to implement it
+
+Each build must pass E2E tests (with **Detox** or **Maestro**), linting and type checking.
+
+**CI/CD configuration with GitHub Actions:**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on: [pull_request] #[push, pull_request] 
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linter
+        run: npm run lint
+      
+      - name: Type check
+        run: npm run type-check
+      
+      - name: Run unit tests
+        run: npm run test
+
+```
+
+**E2E testing example with Detox:**
+
+```tsx
+// e2e/checkout.e2e.ts
+describe('Checkout Flow', () => {
+  beforeAll(async () => {
+    await device.launchApp();
+  });
+
+  it('should complete checkout successfully', async () => {
+    // Login
+    await element(by.id('email-input')).typeText('test@example.com');
+    await element(by.id('password-input')).typeText('password123');
+    await element(by.id('login-button')).tap();
+
+    // Add item to cart
+    await element(by.id('product-card-0')).tap();
+    await element(by.id('add-to-cart-button')).tap();
+
+    // Go to checkout
+    await element(by.id('cart-button')).tap();
+    await element(by.id('checkout-button')).tap();
+
+    // Complete checkout
+    await element(by.id('pay-button')).tap();
+    await expect(element(by.text('Order confirmed'))).toBeVisible();
+  });
+});
+```
+
+**✅ Best practices:**
+- Test critical flows (login, checkout, settings)
+- Run tests on multiple devices and OS versions
+- Make sure CI fails if any test fails
+- Keep tests fast (< 10 minutes for full suite)
+
+---
+
+## 8️⃣ Offline state handling and API error management
+
+### 📖 Why it matters
+
+We already talked about "designing to fail gracefully". Now, the technical how: implement offline detection, automatic retry logic, and user-friendly error messages.
+
+"Error 500" means nothing to the user; "It looks like we're having problems, try again in a few minutes" does. Users are on the subway, in areas with weak signal, or with WiFi that constantly drops. An app that handles these cases well is an app that generates trust.
+
+### 🔧 How to implement it
+
+**Implement a global network state:**
+
+```tsx
+import NetInfo from '@react-native-community/netinfo';
+
+const NetworkStatus = () => {
+  const [isConnected, setIsConnected] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected);
+      
+      // Report connectivity changes
+      Sentry.addBreadcrumb({
+        category: 'network',
+        message: state.isConnected ? 'Network connected' : 'Network disconnected',
+        data: { connectionType: state.type },
+      });
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return { isConnected };
+};
+
+// Offline UI component
+const OfflineBanner = () => {
+  const { isConnected } = NetworkStatus();
+  
+  if (!isConnected) {
+    return (
+      <View style={styles.offlineBanner}>
+        <Text>No connection. Checking...</Text>
+      </View>
+    );
+  }
+  
+  return null;
+};
+```
+
+**Implement retry with exponential backoff:**
+
+```tsx
+const fetchWithRetry = async (
+  url: string,
+  options: RequestInit,
+  maxRetries = 3
+) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, options);
+      
+      if (response.ok) {
+        return response;
+      }
+      
+      // If it's a 5xx error, retry
+      if (response.status >= 500 && i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+        continue;
+      }
+      
+      return response;
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+    }
+  }
+};
+
+// Usage
+try {
+  const response = await fetchWithRetry('/api/checkout', {
+    method: 'POST',
+    body: JSON.stringify(cartData),
+  });
+} catch (error) {
+  Alert.alert(
+    'Connection error',
+    'It looks like we're having problems. Please try again in a few moments.',
+    [{ text: 'Retry', onPress: retryCheckout }]
+  );
+}
+```
+
+**✅ Best practices:**
+- Review *retry* and *circuit breaker* patterns
+- Cache critical data locally for offline mode
+- Show clear loading states ("Saving...", "Syncing...")
+- Distinguish between user errors and recoverable server errors
+
+---
+
+## 9️⃣ Security and sensitive data
+
+### 📖 Why it matters
+
+A security breach can destroy your app in minutes. Make sure you don't expose tokens or credentials. Validate certificates, use secure storage and properly configure HTTPS and App Transport Security.
+
+### 🔧 How to implement it
+
+**Secure token storage:**
+
+```tsx
+import * as Keychain from 'react-native-keychain';
+import * as SecureStore from 'expo-secure-store';
+
+// Save token
+await Keychain.setGenericPassword('authToken', userToken, {
+  service: 'myApp',
+  accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
+});
+
+// Retrieve token
+const credentials = await Keychain.getGenericPassword({ service: 'myApp' });
+const token = credentials ? credentials.password : null;
+```
+
+**Or with Expo:**
+
+```tsx
+await SecureStore.setItemAsync('authToken', token, {
+  requireAuthentication: true,
+});
+
+const token = await SecureStore.getItemAsync('authToken');
+```
+
+**SSL Pinning for critical APIs:**
+
+```tsx
+import RNFetchBlob from 'rn-fetch-blob';
+
+const response = await RNFetchBlob.config({
+  trusty: true,
+}).fetch('GET', 'https://api.example.com/data');
+
+// In production, use specific certificates
+```
+
+**Hide sensitive data from logs:**
+
+```tsx
+const sanitizeLogData = (data: any): any => {
+  if (typeof data !== 'object') return data;
+  
+  const sensitiveKeys = ['password', 'token', 'ssn', 'creditCard'];
+  const sanitized = { ...data };
+  
+  Object.keys(sanitized).forEach(key => {
+    if (sensitiveKeys.some(sensitive => key.toLowerCase().includes(sensitive))) {
+      sanitized[key] = '***REDACTED***';
+    }
+  });
+  
+  return sanitized;
+};
+
+logger.info('Login attempt', sanitizeLogData({ email: user.email, password: user.password }));
+// Logs: { email: 'user@example.com', password: '***REDACTED***' }
+```
+
+**✅ Best practices:**
+- Use `react-native-keychain` or `expo-secure-store` to store sensitive data
+- Never hardcode secrets in code
+- Implement SSL pinning for critical APIs
+- Revoke tokens when you detect suspicious activity
+- Validate and sanitize all user inputs
+
+---
+
+## 🔟 Real-time alerts and visibility
+
+### 📖 Why it matters
+
+We already defined the stability metrics we should track (from the previous article). Now, let's automate alerts: your app shouldn't depend on the user to let you know about a bug.
+
+Configure automatic alerts (Slack, Discord or PagerDuty) when there are error spikes or low stability. A mature team has visibility before the problem escalates. Proactive alerts allow you to react in minutes, not hours.
+
+### 🔧 How to implement it
+
+**Alert configuration in Sentry:**
+
+```tsx
+// In Sentry Dashboard, configure alerts:
+// - Crash rate > 0.5%
+// - New errors
+// - Performance degradation
+
+// In your code, manual trigger of critical alerts
+if (criticalError) {
+  Sentry.captureException(error, {
+    tags: { severity: 'critical' },
+    extra: { requiresImmediateAction: true },
+  });
+}
+```
+
+**Webhook to Slack:**
+
+```tsx
+const sendSlackAlert = async (message: string) => {
+  await fetch('https://hooks.slack.com/services/YOUR/WEBHOOK/URL', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: message,
+      channel: '#alerts',
+    }),
+  });
+};
+
+// In your error handler
+const errorHandler = (error: Error, isFatal: boolean) => {
+  if (isFatal) {
+    sendSlackAlert(`🚨 Fatal crash detected: ${error.message}`);
+  }
+};
+```
+
+**Key metrics dashboard:**
+
+```tsx
+// Configure in your monitoring service a dashboard with:
+// 1. Crash rate (last 24h)
+// 2. Error rate per release
+// 3. Average performance (TTI, FPS)
+// 4. Active users vs users with errors
+```
+
+**✅ Best practices:**
+- Configure alerts in Slack, Discord or PagerDuty
+- Define clear thresholds (e.g., > 1% crash rate = alert)
+- Include useful context in alerts (version, device, stack trace)
+- Review and adjust alerts to avoid excessive noise
+- Have a runbook to respond to each type of alert
+
+---
+
+### 🚀 Final checklist
+
+| Check | Status |
+|-------|--------|
+| Crash rate < 0.5% | ✅ |
+| Global error handler | ✅ |
+| Feature flags implemented | ✅ |
+| Contextual logging | ✅ |
+| Automated tests | ✅ |
+| Offline and fallback UI | ✅ |
+| Basic security covered | ✅ |
+| Real-time alerts | ✅ |
+
+---
+
+### 🧩 From checklist to routine process
+
+The 5 fundamentals from the previous article + these 10 implementation checks = **Your complete resilience shield**.
+
+There are no apps without bugs, but there are **teams with visibility and solid processes**.
+
+**How to implement both articles together:**
+
+**Week 1-2:** Fundamentals (from previous article)
+- Install Sentry and configure crash tracking (Check #1 of this article)
+- Implement global error handlers (Check #2)
+
+**Week 3-4:** Go deeper
+- Configure versioning and build tracking (Check #3)
+- Implement basic feature flags (Check #4)
+
+**Month 2:** Automation
+- Add CI/CD with E2E tests (Check #7)
+- Configure performance tracking (Check #6)
+
+**Month 3:** Maturity
+- Implement robust offline handling (Check #8)
+- Review security and alerts (Checks #9 and #10)
+
+**Each check is an investment in resilience.** Stability isn't glamorous, but it's what separates an app from a product that endures.
+
+> 💡 **Tip:** Share this checklist with your team before the next release. Do a quick review together.
+
+---
+
+Did you like this approach?  
+💬 Tell me what other checks you apply in your projects or what tools have saved you in production.
