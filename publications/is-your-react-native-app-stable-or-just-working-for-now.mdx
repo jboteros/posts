@@ -1,0 +1,234 @@
+---
+title: Is your React Native app stable or just working "for now"?
+description: Many teams build features without thinking about resilience. I'll show you 5 practices that will save you nights of debugging.
+date: "2025-10-21"
+published: true
+language: en
+---
+
+![](/cover-images/tu-app-react-native-es-estable-o-solo-funciona-por-ahora.webp)
+
+### How to go from putting out fires to building resilience in your mobile apps
+
+**Does your React Native app work or does it just "work for now"?** 🤔
+
+There's a huge difference between an app that **works** and an app that **resists**.
+
+Many React Native teams feel comfortable when tests pass, the build is green, and the app looks good in staging.  
+But what truly separates a mature team from an immature one isn't their delivery speed, but **their ability to maintain stability and resilience in production**.
+
+---
+
+## 🔥 The scenario nobody wants to live
+
+Imagine this:
+
+You just released a new version of your React Native app.  
+The whole team celebrates: the build passed, QA approved, users start updating.
+
+But the next day you start receiving messages on all channels:  
+Slack, Discord, support, App Store reviews, even direct messages from frustrated users.
+
+> "The app won't let me log in."  
+> "It stays blank after the splash screen."  
+> "On Android it won't open."
+
+You run to check the logs… and you have no idea about:
+
+- What app version is failing.
+- What devices it's happening on.
+- What OS version they're using.
+- Not even if the error comes from a new or old build.
+
+Without observability, **diagnosis becomes a guessing game**.  
+You start testing hypotheses, reviewing commits, doing rollbacks and the team enters crisis mode without real information.
+
+What seemed like a calm afternoon becomes a marathon of blind debugging.  
+And that's exactly where you understand that **stability isn't improvised**, it's designed from the first commit.
+
+---
+
+## 🚧 React Native: power, but also fragility
+
+Now that we've seen the problem, let's understand why React Native can be especially vulnerable to these scenarios.
+
+React Native is incredible: it allows us to deliver fast, cross-platform features with a shared codebase.  
+But that agility comes at a cost: without clear architecture and without observability, **errors can spread like fire in a dry forest**.
+
+I've seen teams that measure their success by the number of features delivered, and others that measure their success by the number of **crashes prevented**.  
+👉 Guess which ones sleep better.
+
+---
+
+## 🧠 5 practices that turn a "working" app into a **stable** app
+
+Now that we understand the problem, let's see the practical solutions you can implement starting today.
+
+### 1️⃣ Create an observability shield from day one
+
+Don't wait for problems to install **Sentry**, **Firebase Crashlytics** or **Bugsnag**.  
+Observability isn't optional—it's the equivalent of having an instrument panel in your plane.
+
+Beyond capturing errors, the value is in **understanding their context**:
+
+- What app version causes them?
+- What device?
+- What was the user's action before the crash?
+
+A well-implemented `captureException()` with custom tags (version, environment, user, feature) allows you to detect patterns and prevent the next fire.
+
+> 💡 **Tip:** add a wrapper to `captureException` with metadata from user context and release.  
+> This way you'll have traceability between builds, environments and users.
+
+---
+
+### 2️⃣ Master error handling, don't delegate it
+
+A poorly placed `try/catch` can be as dangerous as having none.  
+Learn to distinguish between **recoverable** errors (that you can show with an elegant fallback) and **critical** errors (that should stop the flow and be reported).
+
+#### 💻 Robust example with addBreadcrumb and captureException
+
+Here's a practical example of how to implement robust observability in a profile update function:
+
+```tsx
+import * as Sentry from '@sentry/react-native'
+import { Button, Alert } from 'react-native'
+
+// Helper to log user actions
+const logUserAction = (action: string, data?: Record<string, any>) => {
+  Sentry.addBreadcrumb({
+    category: 'user.action',
+    message: action,
+    level: Sentry.Severity.Info,
+    data,
+  })
+}
+
+const handleUpdateProfile = async (user: User) => {
+  // Log user intent before executing the action
+  logUserAction('Tap on Update Profile', { userId: user.id, email: user.email })
+
+  try {
+    await api.updateProfile(user)
+
+    Sentry.addBreadcrumb({
+      category: 'api.response',
+      message: 'Profile updated successfully',
+      level: Sentry.Severity.Info,
+    })
+
+    Alert.alert('✅ Profile updated successfully')
+  } catch (error) {
+    Sentry.captureException(error, {
+      tags: { section: 'ProfileUpdate' },
+      extra: { userId: user.id },
+    })
+
+    Alert.alert('❌ Error updating your profile. Please try again.')
+  }
+}
+
+// In the JSX
+<Button title="Update profile" onPress={() => handleUpdateProfile(currentUser)} />
+```
+
+### 🧩 **Why it works**
+
+> - 🧠 **`addBreadcrumb` captures user context** just before the error, letting you know what action they executed and with what data.
+> - 🧾 **Successful actions also leave traces**, which helps audit and understand real user flows.
+> - 🏷️ **`tags`** allow grouping and filtering errors to separate alerts between different app features, versions or user segments.
+> - 🧰 **`extra`** adds additional relevant data to the error (like user ID, parameters or local state), facilitating analysis and faster incident resolution.
+
+---
+
+### 3️⃣ **Automate what saves you**
+
+Every build should pass through a security baseline:
+
+- 🧪 **E2E Testing (Detox or Maestro):** simulates the most critical flows (onboarding, login, checkout).
+- 🧩 **Lint and type-checking in CI:** breaks the build if there are untyped errors or unhandled promises.
+- 🚀 **Feature flags:** release changes gradually with tools like **ConfigCat**, **LaunchDarkly** or even your own backend.
+
+> ⚙️ **Automation doesn't replace human judgment**,  
+> but **reduces human error margin** and increases confidence in every release.
+
+---
+
+### 4️⃣ **Design to fail (gracefully)**
+
+When everything fails, the only thing the user perceives is **how you handle the failure**. Design empty screens, loaders and error states. Not as something "secondary", but as part of the normal usage flow.
+
+**Example:** A well-designed "Offline Mode" not only avoids frustration, it also **improves retention**. And a **"Retry"** button on a failed request can be the difference between a 3 ⭐ and a 5 ⭐ rating on the Play Store.
+
+> 💬 **Key principle:** Resilience isn't just technical—it's also UX.  
+> Designing for failure is designing for reality.
+
+---
+
+### 5️⃣ **Make stability a team metric**
+
+Stability should be as visible as speed.  
+Measure **crashes per session**, **mean time between failures (MTBF)** and **error rate per release**.
+
+**Specific metrics you can implement today:**
+
+- **Crash Rate**: `(Crashes / Active sessions) × 100` - Ideally < 0.1%
+- **MTBF**: Average time between critical errors - Target: > 7 days
+- **Error Rate per Release**: `(New errors / Active users) × 100` - Goal: < 0.5%
+
+Include these metrics in your **dailies or weeklies**—not as punishment, but as a compass.  
+When teams see how a refactor reduces 20% of errors in production, it generates a culture of **technical pride and silent excellence**.
+
+> 📊 **Suggested metric:**  
+> _Error Rate = (Total errors captured / Active sessions) × 100_  
+> Use this figure as a technical health indicator in your team dashboard.
+
+---
+
+## 🧩 **The mindset shift: from features to fundamentals**
+
+I've seen teams that deliver features daily, and others that spend weeks strengthening architecture, testing and monitoring.  
+What's the difference?  
+The first ones **run**.  
+The second ones **endure**.
+
+In React Native, the true "senior level" isn't measured by how many components you can build in an afternoon, but by **how you respond when something fails on 50,000 devices at the same time**.
+
+> Stability isn't glamorous,  
+> but it's what separates an **app from a product**.  
+> It's what turns a developer into an **engineer**.
+
+---
+
+## ⚙️ **Conclusion**
+
+Every crash in production is a learning opportunity,  
+but also a symptom of technical debt.  
+Every time you say _"it only happened once"_, you're letting a crack grow that will later cost sleepless nights.
+
+Today you can choose between two paths:
+
+- 🏃 **Keep building features** until the app becomes unmanageable.
+- 🧱 **Start building resilience**, line by line, practice by practice.
+
+Your app can keep working "for now".  
+Or it can **still be alive in a year**, regardless of the release, the framework or the device.
+
+---
+
+## 🚀 **Your next step**
+
+**Where to start?** I suggest this order:
+
+1. **First week**: Install Sentry or Firebase Crashlytics
+2. **Next 7 days**: Implement the `addBreadcrumb` and `captureException` pattern in your critical functions
+3. **In a month**: Set up stability metrics in your team dashboard
+
+> 💡 **Remember**: Stability isn't glamorous, but it's what separates an app from a product.  
+> It's what turns a developer into an **engineer**.
+
+---
+
+**#react-native #react #mobile-development #engineering #stability #observability**
+
