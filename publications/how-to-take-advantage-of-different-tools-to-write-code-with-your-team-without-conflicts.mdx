@@ -1,0 +1,231 @@
+---
+title: How to take advantage of different tools to write code with your team without conflicts
+description: Learn how to streamline collaboration and maintain code quality using Git flow, ESLint, Prettier, pre-commit hooks, and CI/CD verifications.
+date: "2025-10-29"
+published: true
+language: en
+---
+
+![](/cover-images/team-coding-tools.webp)
+
+### Building harmony in team coding workflows
+
+**Collaboration in software development is challenging.**  
+Conflicts in workflows, inconsistent code styles, and integration issues can disrupt team productivity and cause frustration.
+
+The good news? With the right tools and practices, your team can transform chaos into harmony.
+
+---
+
+## 🛠️ Essential tools for team collaboration
+
+To ensure smooth collaboration, your team needs tools that enhance visibility, enforce standards, and automate tedious tasks. Here's how to use them effectively:
+
+---
+
+### 1️⃣ Git Flow — Structuring your work
+
+Git Flow is a branching model designed to organize development efforts:
+
+- **Feature branches:** Isolate work on new features.  
+- **Develop branch:** Integrate completed features for testing.  
+- **Release branch:** Prepare stable versions for production.  
+- **Hotfix branch:** Quickly address critical issues in production.
+
+> 💬 **Comment:** Git Flow gives visibility and structure. Each team member knows where to work without colliding with others, reducing the risk of merge conflicts and messy histories.
+
+> 💡 **Pro tip:** Use branch naming conventions (e.g., `feature/login-page`, `hotfix/payment-crash`) to maintain clarity.  
+> 📚 **Related resource:** [Git Flow documentation](https://nvie.com/posts/a-successful-git-branching-model/)
+
+---
+
+### 2️⃣ ESLint — Enforcing code quality
+
+Inconsistent and error-prone code slows down development. ESLint ensures your team adheres to consistent coding standards by:
+
+- Detecting syntax errors.  
+- Enforcing best practices.  
+- Highlighting potential bugs.
+
+> 🧩 **Example configuration:**
+>
+> ```json
+> {
+>   "extends": "eslint:recommended",
+>   "rules": {
+>     "semi": ["error", "always"],
+>     "quotes": ["error", "single"]
+>   }
+> }
+> ```
+
+> 💬 **Comment:** ESLint keeps everyone thousands of standards. No matter who writes the code, the result feels unified and predictable.
+
+> 💡 **Pro tip:** Extend ESLint with plugins like `eslint-plugin-react` for framework-specific rules.
+
+---
+
+### ⚙️ Advanced ESLint Rules and Plugins
+
+Beyond syntax and style, ESLint offers a wide ecosystem of **rules and plugins** that help maintain a clean and performant project.  
+Each rule can be configured with different levels — `off`, `warn`, or `error` — and your CI/CD can be set to **reject builds or pull requests** if certain errors are found.
+
+#### 🔍 Common Plugins & Rules
+
+- **`react-hooks`** — Rules like `react-hooks/rules-of-hooks` and `react-hooks/exhaustive-deps` verify hook usage and dependency arrays to avoid race conditions and logic bugs.  
+  _(You can disable a specific dependency check in a `useEffect` comment if needed.)_
+
+- **`plugin-no-inline-styles`** — Inline styles in React Native often become unmaintainable. This plugin helps enforce style organization.  
+  Personally, I keep `StyleSheet` blocks in the same file (for context and cleanup) so the rule can track unused styles efficiently.
+
+- **`no-barrel-files`** — Barrel files (`index.js` exports) can hurt performance and hide imports.  
+  This rule helps identify and remove them where possible.
+
+- **`@typescript-eslint/no-unused-vars`** — Highlights unused variables to keep code clean.  
+  You can prefix a variable with `_` to safely ignore it when intentional.
+
+- **`react-native/no-inline-styles`** — Inline styles cause re-renders and performance hits.  
+  Tools like **React Native Style Generator (VS Code plugin)** help refactor these quickly.
+
+- **`import/order` + `sort-imports`** — Maintain a clear, grouped import structure to improve readability and speed up comprehension.
+
+  > 💡 **Tip:** Organize imports by group:  
+  > `react`, `react-native`, external libs, project aliases (`@/`), parents, siblings.
+
+  **Example (single block):**
+
+  ```js
+  import React, { useState } from 'react';
+  import { Keyboard, Platform, StyleSheet, View } from 'react-native';
+  import Animated from 'react-native-reanimated';
+  import { colors } from '@/styles';
+  import { MyText } from '@/components';
+  import { ParentComponent } from '../Parent';
+  import { SiblingComponent } from './Sibling';
+  ```
+
+  **Example (with newlines-between):**
+
+  ```js
+  import React, { useState } from 'react';
+  import { Keyboard, Platform, StyleSheet, View } from 'react-native';
+
+  import Animated from 'react-native-reanimated';
+
+  import { colors } from '@/styles';
+  import { MyText } from '@/components';
+
+  import { ParentComponent } from '../Parent';
+  import { SiblingComponent } from './Sibling';
+  ```
+
+> 💬 **Comment:** Start with these rules in warn mode to evaluate project impact. Once your repository is clean, enforce them as error to block regressions during commits or CI builds.
+
+---
+
+### 3️⃣ Prettier — Formatting code automatically
+
+Arguments about code style are a waste of time. Prettier eliminates these debates by automatically formatting code to match a defined style.
+
+**🔧 Integration with ESLint:**
+
+```json
+{
+  "extends": ["eslint:recommended", "plugin:prettier/recommended"]
+}
+```
+
+> 💬 **Comment:** Let Prettier handle formatting — it's not about "personal style," it's about consistency and readability for everyone.
+
+> 💡 **Pro tip:** Enable Prettier to autoformat code on save in your IDE.
+
+---
+
+### 4️⃣ Pre-commit hooks — Catch issues early
+
+Pre-commit hooks automate checks locally before your code is even pushed.  
+Use tools like **Husky** to enforce:
+
+- Running ESLint and Prettier.  
+- Verifying tests pass.  
+- Checking for unused files or code with npx unimported.  
+- Ensuring commit messages follow guidelines.
+
+**🧩 Example with Husky:**
+
+```bash
+npx husky add .husky/pre-commit "npm run lint && npm run test && npx unimported"
+```
+
+> 💬 **Comment:**  
+> Pre-commit hooks run on your local branch, before code reaches remote.  
+> Tools like **unimported** help keep the project clean by detecting unused code or assets — this reduces binary size and avoids shipping dead files.
+
+> 💡 **Pro tip:** You can configure unimported to ignore specific directories (like templates or config files) that are required but not directly imported.
+
+---
+
+### 5️⃣ CI/CD verifications — Automating quality checks
+
+CI/CD pipelines ensure every code change is tested and verified before it reaches production.  
+Typical steps include:
+
+- **Linting:** ESLint and Prettier checks.  
+- **Testing:** Run unit and integration tests.  
+- **Code cleanliness:** Use npx unimported to verify the repository doesn't contain unused code or assets.  
+- **Building:** Verify the app compiles successfully.
+
+**🧩 Example CI pipeline (GitHub Actions):**
+
+```yaml
+name: CI
+on:
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npx unimported
+```
+
+> 💬 **Comment:**  
+> On CI/CD, checks run on your Pull Request, combining your branch with the base branch (usually develop or main).  
+> This ensures your code not only works in isolation — it also integrates cleanly with the rest of the project.  
+> Running **unimported** here prevents dead code from living in your mainline, keeping builds lean and efficient.
+
+> 💡 **Pro tip:** Use branches like develop or release to test features in staging before merging into main.
+
+---
+
+## 💪 The benefits of using these tools together
+
+By integrating these tools into your workflow, your team can:
+
+- 🚫 **Reduce conflicts:** Automatic formatting and linting ensure consistent code.  
+- 🧹 **Keep the project clean:** Tools like unimported remove clutter and reduce bundle size.  
+- ⚙️ **Enforce standards:** ESLint plugins and advanced rules prevent regressions before they ship.  
+- ⏱️ **Save time:** Automate tedious checks with pre-commits and CI/CD pipelines.  
+- ✅ **Improve quality:** Early detection of issues prevents production problems.  
+- 🤝 **Enhance collaboration:** A clear Git Flow structure simplifies teamwork.
+
+---
+
+## 🎯 The takeaway
+
+Writing code as a team doesn't have to be chaotic.  
+With **Git Flow**, **ESLint**, **Prettier**, **pre-commit hooks**, and **CI/CD verifications**, your team can focus on building great software without worrying about conflicts or quality issues.
+
+Start small — adopt one tool at a time — and gradually build a workflow that fits your team's needs.  
+Collaboration works best when it's supported by the right tools.
+
+Happy coding! 💻
+
