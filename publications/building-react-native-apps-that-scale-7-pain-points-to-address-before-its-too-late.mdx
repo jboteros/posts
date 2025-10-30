@@ -1,0 +1,975 @@
+---
+title: Building React Native apps that scale: 7 pain points to address before it's too late
+description: Your React Native app works perfectly with 3 developers and 20 screens. But what happens when you need to scale? Learn the pain points that catch teams off guard and how to address them proactively.
+date: "2025-01-15"
+published: true
+language: en
+---
+
+![](/cover-images/building-react-native-apps-that-scale-7-pain-points-to-address-before-its-too-late.webp)
+
+### From prototype to production at scale
+
+**Your React Native app works perfectly... until it doesn't.**
+
+Every team I've worked with starts with the same assumption: "We'll refactor when we need to." But scaling isn't a switch you flip—it's a gradual process that sneaks up on you. One day you're shipping features quickly. The next, you're debugging state management issues at 2 AM, wondering how everything became so complicated.
+
+The truth? **Most scaling problems are predictable.** They follow patterns you can spot early and address before they become emergencies.
+
+---
+
+## 🎯 What we'll cover
+
+This article walks through **7 critical pain points** that emerge as React Native apps grow:
+
+- When each problem typically appears
+- Why it happens
+- Practical solutions you can implement today
+
+These aren't theoretical concerns—they're real challenges I've seen derail production apps. Address them proactively, and you'll keep your team productive and your app maintainable.
+
+---
+
+## 1️⃣ State Management Chaos
+
+### 🔥 When it hits
+
+You'll notice this around **20+ screens** with **multiple developers** working in parallel. Suddenly, passing props through 5 components feels wrong, but every state management solution feels like overkill.
+
+### 📖 The problem
+
+What starts simple becomes complicated fast:
+
+- **Multiple state solutions:** Redux for auth, Context for theme, Zustand for cart, local state everywhere else
+- **Prop drilling:** Passing callbacks and data through 7 component layers
+- **Unclear data flow:** No one knows where state lives or how to update it
+- **Re-render nightmares:** A tiny state change triggers re-renders across the entire app
+
+**The impact:**
+- Debugging becomes a guessing game
+- Onboarding new developers takes weeks instead of days
+- Performance degrades from unnecessary re-renders
+- Features take longer because no one knows where to put state
+
+### 🔧 The solution
+
+**Consolidate on a single state management approach.** Here's a strategy that works:
+
+#### Option 1: Zustand for global state (recommended for most teams)
+
+Zustand gives you Redux-like power with minimal boilerplate:
+
+```tsx
+// stores/authStore.ts
+import create from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface AuthState {
+  user: User | null;
+  token: string | null;
+  login: (user: User, token: string) => void;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      user: null,
+      token: null,
+      login: (user, token) => set({ user, token }),
+      logout: () => set({ user: null, token: null }),
+    }),
+    { name: 'auth-storage' }
+  )
+);
+
+// Usage in components
+const ProfileScreen = () => {
+  const { user, logout } = useAuthStore();
+  // Component automatically re-renders only when user or logout changes
+  return <View>...</View>;
+};
+```
+
+**Why Zustand works:**
+- ✅ Minimal boilerplate—create a store in 5 lines
+- ✅ TypeScript support out of the box
+- ✅ Built-in selectors prevent unnecessary re-renders
+- ✅ Persist middleware for easy local storage
+
+> 💡 **Pro tip:** Use Zustand for global state (auth, theme, settings), React state for component-local state, and Context only for truly app-wide concerns (like theme providers).
+
+#### Option 2: React Query + local state for server state
+
+For apps heavy on API calls, React Query manages server state while local state handles UI:
+
+```tsx
+import { useQuery, useMutation } from '@tanstack/react-query';
+
+// React Query handles server state
+const useProducts = () => {
+  return useQuery({
+    queryKey: ['products'],
+    queryFn: () => api.getProducts(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+};
+
+// Local state for UI-only concerns
+const ProductList = () => {
+  const [filter, setFilter] = useState('');
+  const { data: products, isLoading } = useProducts();
+  
+  const filtered = products?.filter(p => p.name.includes(filter));
+  
+  return <View>...</View>;
+};
+```
+
+> 💬 **Comment:** React Query eliminates the need to store server data in global state. It handles caching, refetching, and synchronization automatically.
+
+### ✅ Action plan
+
+1. **Week 1:** Audit your current state management. List every place you store state (Redux, Context, local state, etc.)
+2. **Week 2:** Choose one approach for global state (Zustand recommended). Migrate one feature as a proof of concept.
+3. **Month 1:** Gradually migrate the rest. Establish team conventions for when to use global vs local state.
+
+---
+
+## 2️⃣ Bundle Size Explosion
+
+### 🔥 When it hits
+
+Typically around **50+ dependencies** or when your JavaScript bundle exceeds **2-3MB**. Users complain about slow app startup, and App Store reviews mention loading times.
+
+### 📖 The problem
+
+Every `npm install` seems harmless, but they add up:
+
+- **Heavy libraries:** Including entire icon sets when you use 3 icons
+- **Duplicate dependencies:** Multiple versions of the same library
+- **No code splitting:** The entire app loads on startup
+- **Unused code:** Dead code from removed features still in the bundle
+
+**The impact:**
+- App startup takes 5+ seconds on average devices
+- Poor App Store metrics (low install completion rates)
+- Increased memory usage
+- Longer build times
+
+### 🔧 The solution
+
+#### 1. Audit your bundle size
+
+```bash
+# Analyze your bundle
+npx react-native-bundle-visualizer
+
+# Or use Metro bundler's built-in analyzer
+npx react-native start --reset-cache
+```
+
+This shows which dependencies are taking the most space.
+
+#### 2. Replace heavy libraries with lighter alternatives
+
+```tsx
+// ❌ Don't: Import entire library
+import { Icon1, Icon2, Icon3 } from '@fortawesome/react-native-fontawesome';
+
+// ✅ Do: Tree-shake or use lighter alternatives
+import Icon from 'react-native-vector-icons/Feather'; // Only imports what you use
+```
+
+**Common heavy dependencies and alternatives:**
+- Lodash → Import specific functions: `import debounce from 'lodash/debounce'`
+- Moment.js → date-fns (smaller, tree-shakeable)
+- Entire UI libraries → Use only what you need or build custom components
+
+#### 3. Implement dynamic imports
+
+React Native supports dynamic imports for code splitting:
+
+```tsx
+// Lazy load heavy screens
+const HeavyFeature = React.lazy(() => import('./HeavyFeature'));
+
+const App = () => {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <HeavyFeature />
+    </Suspense>
+  );
+};
+```
+
+#### 4. Remove unused dependencies
+
+```bash
+# Find unused dependencies
+npx depcheck
+
+# Remove what you don't use
+npm uninstall unused-package
+```
+
+#### 5. Use Hermes (React Native's optimized engine)
+
+Hermes improves startup time and reduces memory usage:
+
+```js
+// android/app/build.gradle
+project.ext.react = [
+    enableHermes: true
+]
+```
+
+> 💡 **Pro tip:** Set a bundle size budget. If a PR increases bundle size by more than 50KB, require justification. Tools like `bundlewatch` can enforce this in CI.
+
+### ✅ Action plan
+
+1. **This week:** Run bundle analysis. Identify the 5 largest dependencies.
+2. **Next week:** Replace or remove the biggest offenders.
+3. **Ongoing:** Add bundle size checks to CI/CD. Block PRs that increase size significantly.
+
+---
+
+## 3️⃣ Navigation Complexity
+
+### 🔥 When it hits
+
+Usually around **multi-modal navigation**, **deep linking**, or **complex auth flows**. Navigation bugs become hard to reproduce, and back button behavior becomes unpredictable.
+
+### 📖 The problem
+
+React Navigation is powerful, but complexity grows with your app:
+
+- **Deep linking breaks:** URL parameters don't match navigation state
+- **Back button edge cases:** Android back button goes to wrong screen
+- **Navigation state issues:** Stack gets corrupted after certain flows
+- **Modal management:** Multiple modals create navigation stack confusion
+
+**The impact:**
+- Users get lost in the app
+- Deep links fail to open correct screens
+- Back button closes the app when it should go to previous screen
+- Navigation bugs are hard to debug and reproduce
+
+### 🔧 The solution
+
+#### 1. Centralize navigation configuration
+
+Create a single source of truth for your navigation structure:
+
+```tsx
+// navigation/types.ts
+export type RootStackParamList = {
+  Home: undefined;
+  ProductDetail: { productId: string };
+  Checkout: { cartId: string };
+  Auth: undefined;
+};
+
+// navigation/AppNavigation.tsx
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+export const AppNavigation = () => {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator>
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+```
+
+#### 2. Implement deep linking properly
+
+```tsx
+// navigation/linking.ts
+import { LinkingOptions } from '@react-navigation/native';
+
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['myapp://', 'https://myapp.com'],
+  config: {
+    screens: {
+      Home: '',
+      ProductDetail: 'product/:productId',
+      Checkout: 'checkout/:cartId',
+    },
+  },
+};
+
+// In your NavigationContainer
+<NavigationContainer linking={linking}>
+  {/* ... */}
+</NavigationContainer>
+```
+
+#### 3. Handle Android back button correctly
+
+```tsx
+import { BackHandler } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+
+const ProductDetailScreen = ({ navigation }) => {
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        // Handle back button
+        navigation.goBack();
+        return true; // Prevent default behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [navigation])
+  );
+};
+```
+
+#### 4. Use navigation refs for programmatic navigation
+
+```tsx
+// navigation/navigationRef.ts
+import { createNavigationContainerRef } from '@react-navigation/native';
+
+export const navigationRef = createNavigationContainerRef();
+
+export function navigate(name: string, params?: any) {
+  if (navigationRef.isReady()) {
+    navigationRef.navigate(name, params);
+  }
+}
+
+// Use anywhere in your app
+import { navigate } from './navigation/navigationRef';
+navigate('ProductDetail', { productId: '123' });
+```
+
+> 💬 **Comment:** Navigation refs let you navigate from outside React components (like in API interceptors or error handlers) without prop drilling.
+
+### ✅ Action plan
+
+1. **Week 1:** Document your navigation structure. Create type definitions for all routes.
+2. **Week 2:** Implement and test deep linking for critical user flows.
+3. **Ongoing:** Add navigation tests. Use tools like Maestro or Detox to test navigation flows automatically.
+
+---
+
+## 4️⃣ Native Module Integration Hell
+
+### 🔥 When it hits
+
+Usually appears with **multiple native dependencies** or when you need to **upgrade React Native versions**. Builds start failing, linking breaks, and platform-specific code becomes unmaintainable.
+
+### 📖 The problem
+
+Native modules are powerful but fragile:
+
+- **Linking issues:** Autolinking fails, manual linking is error-prone
+- **Version conflicts:** Native dependency A requires RN 0.72, but dependency B requires RN 0.73
+- **Platform inconsistencies:** Code works on iOS but breaks on Android
+- **Upgrade blockers:** Can't upgrade React Native because a native module isn't compatible
+
+**The impact:**
+- Build failures that take days to debug
+- Can't upgrade React Native (security risks, missing features)
+- Platform-specific bugs that only appear in production
+- Developer velocity slows as native issues consume time
+
+### 🔧 The solution
+
+#### 1. Prefer maintained libraries with active communities
+
+Before adding a native dependency, check:
+- ✅ Last updated within 6 months
+- ✅ Active GitHub issues/discussions
+- ✅ Compatible with latest React Native versions
+- ✅ Good documentation and examples
+
+**Search for alternatives:**
+```bash
+# Check npm for alternatives
+npm search react-native-[feature]
+
+# Check GitHub for activity
+# Look for: stars, recent commits, open issues
+```
+
+#### 2. Use autolinking (React Native 0.60+)
+
+Most modern libraries support autolinking. If a library requires manual linking, consider alternatives:
+
+```bash
+# Check what's being autolinked
+npx react-native config
+
+# Manual linking should be rare
+# If needed, use react-native.config.js
+```
+
+#### 3. Create a local native module for custom functionality
+
+Instead of finding a library for everything, sometimes a small native module is better:
+
+```objc
+// ios/MyAppModule.m
+#import <React/RCTBridgeModule.h>
+
+@interface RCT_EXTERN_MODULE(MyAppModule, NSObject)
+RCT_EXTERN_METHOD(doSomething:(NSString *)param
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+@end
+```
+
+```tsx
+// MyAppModule.ts
+import { NativeModules } from 'react-native';
+
+const { MyAppModule } = NativeModules;
+
+export const doSomething = async (param: string) => {
+  return MyAppModule.doSomething(param);
+};
+```
+
+#### 4. Document native dependencies
+
+Keep a running list of native dependencies and their purposes:
+
+```markdown
+# Native Dependencies
+
+- `@react-native-community/netinfo` - Network status
+- `react-native-keychain` - Secure storage
+- `@react-native-async-storage/async-storage` - Local storage
+
+## Upgrade Notes
+- NetInfo: Compatible with RN 0.72+
+- Keychain: Requires manual pod install on iOS
+```
+
+#### 5. Test on both platforms early
+
+```bash
+# Test on both platforms in development
+npx react-native run-ios
+npx react-native run-android
+
+# Before committing
+```
+
+> 💡 **Pro tip:** Use Expo if possible. It manages native dependencies for you and reduces integration headaches. For bare React Native, consider Expo Modules for better dependency management.
+
+### ✅ Action plan
+
+1. **This month:** Audit native dependencies. Remove unused ones, document remaining ones.
+2. **Before upgrades:** Check compatibility of all native modules with target RN version.
+3. **Ongoing:** Prefer JavaScript-only solutions when possible. Native modules should be a last resort.
+
+---
+
+## 5️⃣ Performance Degradation
+
+### 🔥 When it hits
+
+Usually around **large lists**, **complex screens**, or **heavy operations**. Users report janky animations, the app feels slow, and you see negative App Store reviews about performance.
+
+### 📖 The problem
+
+Performance issues creep in gradually:
+
+- **UI thread blocking:** Heavy JavaScript operations block rendering
+- **List rendering issues:** FlatList becomes slow with hundreds of items
+- **Memory leaks:** Components don't clean up, memory usage grows over time
+- **Unnecessary re-renders:** Components re-render when they don't need to
+
+**The impact:**
+- Poor user experience (janky animations, slow interactions)
+- Increased crash rate from memory pressure
+- Negative reviews that hurt app store ranking
+- Users uninstall the app
+
+### 🔧 The solution
+
+#### 1. Optimize FlatList rendering
+
+```tsx
+// ❌ Don't: Render everything at once
+<FlatList
+  data={items}
+  renderItem={({ item }) => <ItemComponent item={item} />}
+/>
+
+// ✅ Do: Use optimization props
+<FlatList
+  data={items}
+  renderItem={({ item }) => <ItemComponent item={item} />}
+  keyExtractor={(item) => item.id}
+  removeClippedSubviews={true}
+  maxToRenderPerBatch={10}
+  windowSize={10}
+  getItemLayout={(data, index) => ({
+    length: ITEM_HEIGHT,
+    offset: ITEM_HEIGHT * index,
+    index,
+  })}
+  initialNumToRender={10}
+/>
+```
+
+#### 2. Move heavy operations off the UI thread
+
+```tsx
+// ❌ Don't: Block UI thread
+const processData = (data) => {
+  // Heavy computation blocks rendering
+  return data.map(complexTransformation);
+};
+
+// ✅ Do: Use interaction manager or Web Workers
+import { InteractionManager } from 'react-native';
+
+const processData = (data) => {
+  return new Promise((resolve) => {
+    InteractionManager.runAfterInteractions(() => {
+      // Runs after animations complete
+      const result = data.map(complexTransformation);
+      resolve(result);
+    });
+  });
+};
+```
+
+#### 3. Memoize expensive computations
+
+```tsx
+import { useMemo } from 'react';
+
+const ExpensiveComponent = ({ items, filter }) => {
+  // ✅ Memoize filtered items
+  const filteredItems = useMemo(() => {
+    return items.filter(item => item.category === filter);
+  }, [items, filter]);
+
+  return <FlatList data={filteredItems} />;
+};
+```
+
+#### 4. Fix memory leaks with proper cleanup
+
+```tsx
+import { useEffect } from 'react';
+
+const ComponentWithSubscriptions = () => {
+  useEffect(() => {
+    const subscription = eventEmitter.addListener('event', handleEvent);
+    
+    // ✅ Always clean up
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  // Also clean up timers, animations, etc.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // Do something
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+};
+```
+
+#### 5. Use React.memo to prevent unnecessary re-renders
+
+```tsx
+// ✅ Memoize components that re-render frequently
+const ProductCard = React.memo(({ product, onPress }) => {
+  return (
+    <TouchableOpacity onPress={() => onPress(product.id)}>
+      <Text>{product.name}</Text>
+    </TouchableOpacity>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if product.id or onPress changes
+  return prevProps.product.id === nextProps.product.id &&
+         prevProps.onPress === nextProps.onPress;
+});
+```
+
+#### 6. Profile and measure
+
+```tsx
+// Use React DevTools Profiler in development
+// Use Flipper Performance Monitor
+// Use Sentry Performance Monitoring in production
+
+import * as Sentry from '@sentry/react-native';
+
+const transaction = Sentry.startTransaction({
+  name: 'LoadProductList',
+  op: 'navigation',
+});
+
+// ... your code ...
+
+transaction.finish();
+```
+
+> 💡 **Pro tip:** Set performance budgets. If a screen takes more than 2 seconds to become interactive, it needs optimization. Use tools like React DevTools Profiler or Flipper to identify bottlenecks.
+
+### ✅ Action plan
+
+1. **This week:** Profile your app. Identify the slowest screens.
+2. **Next 2 weeks:** Optimize FlatLists and heavy components using the techniques above.
+3. **Ongoing:** Monitor performance metrics in production. Use Sentry Performance or similar tools.
+
+---
+
+## 6️⃣ Testing and CI/CD Bottlenecks
+
+### 🔥 When it hits
+
+Usually around a **growing test suite** or **multiple platforms/configurations**. Builds take 15+ minutes, E2E tests are flaky, and deployments become stressful.
+
+### 📖 The problem
+
+Testing infrastructure doesn't scale:
+
+- **Flaky E2E tests:** Tests pass sometimes, fail other times for no reason
+- **Slow CI builds:** Builds take 15-30 minutes, blocking developers
+- **Test coverage gaps:** Critical flows aren't tested, bugs slip through
+- **Platform complexity:** Testing on iOS, Android, multiple versions is time-consuming
+
+**The impact:**
+- Slow release cycles (waits for CI)
+- Low confidence in releases (flaky tests)
+- Bugs reach production because tests don't cover critical paths
+- Developer frustration with long feedback loops
+
+### 🔧 The solution
+
+#### 1. Write reliable E2E tests with proper waits
+
+```tsx
+// ❌ Don't: Use arbitrary timeouts
+await waitFor(() => {
+  expect(element(by.id('button'))).toBeVisible();
+}, { timeout: 5000 });
+
+// ✅ Do: Wait for specific conditions
+await waitFor(async () => {
+  await expect(element(by.id('button'))).toBeVisible();
+}, {
+  timeout: 5000,
+  interval: 100,
+});
+```
+
+**Use Maestro for more reliable E2E tests:**
+
+```yaml
+# e2e/login.flow.yaml
+appId: com.myapp
+---
+- launchApp
+- tapOn: "Login"
+- inputText: "test@example.com" into: "Email"
+- inputText: "password123" into: "Password"
+- tapOn: "Submit"
+- assertVisible: "Welcome"
+```
+
+Maestro is more resilient to UI changes and less flaky than Detox.
+
+#### 2. Optimize CI build times
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on: [pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      # ✅ Cache dependencies
+      - uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            ~/.gradle/caches
+          key: ${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+      
+      - name: Install dependencies
+        run: npm ci  # Use ci instead of install for faster, reliable builds
+      
+      # ✅ Run tests in parallel
+      - name: Run tests
+        run: npm run test:ci
+      
+      # ✅ Only run E2E on main branch or specific PRs
+      - name: Run E2E
+        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'e2e')
+        run: npm run test:e2e
+```
+
+#### 3. Focus testing on critical user flows
+
+Don't try to test everything. Focus on:
+
+- ✅ User authentication
+- ✅ Critical business flows (checkout, payments)
+- ✅ App navigation
+- ✅ Error handling
+
+**Use the testing pyramid:**
+- **Unit tests:** Fast, many, test individual functions
+- **Integration tests:** Medium speed, test component interactions
+- **E2E tests:** Slow, few, test critical user journeys
+
+#### 4. Use test mocks and fixtures
+
+```tsx
+// __mocks__/api.ts
+export const api = {
+  getUser: jest.fn(() => Promise.resolve({ id: '1', name: 'Test User' })),
+  updateUser: jest.fn(() => Promise.resolve()),
+};
+
+// Use in tests
+import { api } from '../__mocks__/api';
+```
+
+#### 5. Set up test reporting
+
+```bash
+# Use a test reporter
+npm install --save-dev jest-html-reporter
+
+# In jest.config.js
+reporters: [
+  'default',
+  ['jest-html-reporter', {
+    outputPath: './test-results.html',
+  }],
+],
+```
+
+> 💬 **Comment:** Don't aim for 100% test coverage. Aim for confidence. If a test doesn't increase your confidence that the app works, it's not worth maintaining.
+
+### ✅ Action plan
+
+1. **Week 1:** Audit your test suite. Identify flaky tests and remove or fix them.
+2. **Week 2:** Set up caching in CI. Optimize build times.
+3. **Month 1:** Focus E2E tests on critical flows only (5-10 tests max). Use Maestro for reliability.
+4. **Ongoing:** Review and remove low-value tests. Keep the suite fast and reliable.
+
+---
+
+## 7️⃣ Team Collaboration Breakdown
+
+### 🔥 When it hits
+
+Usually around **5+ developers** working on **multiple features in parallel**. Merge conflicts increase, code review takes forever, and knowledge becomes siloed.
+
+### 📖 The problem
+
+Team coordination breaks down:
+
+- **Merge conflicts:** Multiple people editing the same files
+- **Inconsistent patterns:** Everyone solves problems differently
+- **Knowledge silos:** Only one person knows how X works
+- **Slow code reviews:** Reviews take days, blocking work
+
+**The impact:**
+- Slower feature delivery (waiting on reviews)
+- Technical debt accumulates (inconsistent patterns)
+- Burnout (constant conflict resolution)
+- Onboarding takes weeks
+
+### 🔧 The solution
+
+#### 1. Establish clear code patterns and conventions
+
+Create a team style guide:
+
+```markdown
+# Style Guide
+
+## State Management
+- Use Zustand for global state
+- Use React state for component-local state
+- Never use Context for frequently-changing data
+
+## Component Structure
+```tsx
+// 1. Imports (React, RN, third-party, local)
+import React from 'react';
+import { View, Text } from 'react-native';
+import { useAuthStore } from '@/stores';
+
+// 2. Types/Interfaces
+interface Props {
+  title: string;
+}
+
+// 3. Component
+export const MyComponent: React.FC<Props> = ({ title }) => {
+  // Component logic
+  return <View>...</View>;
+};
+```
+
+## Naming Conventions
+- Components: PascalCase (UserProfile)
+- Files: kebab-case (user-profile.tsx)
+- Hooks: camelCase with "use" prefix (useAuth)
+```
+
+#### 2. Use code review checklists
+
+```markdown
+# PR Checklist
+
+- [ ] Code follows style guide
+- [ ] No console.logs or debug code
+- [ ] Tests pass locally
+- [ ] No TypeScript errors
+- [ ] PR description explains what and why
+```
+
+#### 3. Document architectural decisions
+
+```markdown
+# docs/architecture.md
+
+## Why We Use Zustand
+
+We chose Zustand over Redux because:
+1. Less boilerplate (faster development)
+2. Better TypeScript support
+3. Simpler mental model
+
+## File Structure
+
+src/
+  components/     # Reusable UI components
+  screens/        # Screen components
+  stores/         # Zustand stores
+  services/       # API and business logic
+  hooks/          # Custom React hooks
+```
+
+#### 4. Pair programming for complex features
+
+- Pair on the first implementation of a pattern
+- Document the pattern for future use
+- Spread knowledge across the team
+
+#### 5. Use tools to enforce consistency
+
+```json
+// .eslintrc.js - Enforce patterns automatically
+{
+  "rules": {
+    "no-console": "error",
+    "@typescript-eslint/explicit-function-return-type": "warn",
+    "import/order": ["error", {
+      "groups": ["builtin", "external", "internal", "parent", "sibling"],
+    }],
+  }
+}
+```
+
+```json
+// .prettierrc - Consistent formatting
+{
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "tabWidth": 2
+}
+```
+
+#### 6. Regular architecture reviews
+
+Schedule monthly meetings to:
+- Review recent patterns and decisions
+- Discuss pain points
+- Update style guide based on learnings
+
+> 💡 **Pro tip:** Automate what you can. Use ESLint, Prettier, and pre-commit hooks to enforce patterns automatically. Save discussions for architectural decisions, not code style.
+
+### ✅ Action plan
+
+1. **This week:** Create a style guide. Document current patterns.
+2. **Next week:** Set up ESLint and Prettier to enforce style automatically.
+3. **Month 1:** Hold first architecture review. Document decisions.
+4. **Ongoing:** Keep style guide updated. Use it in code reviews.
+
+---
+
+## 🎯 The takeaway
+
+Scaling React Native apps isn't about adding more servers or infrastructure—it's about **maintaining code quality and team velocity as complexity grows**.
+
+The pain points we covered are predictable:
+- They appear at specific stages of growth
+- They follow patterns you can recognize early
+- They're addressable with proactive planning
+
+**The teams that succeed at scale:**
+- ✅ Make architectural decisions early (state management, testing strategy)
+- ✅ Automate what can be automated (linting, formatting, tests)
+- ✅ Document patterns and decisions
+- ✅ Refactor continuously, not just when it hurts
+
+**The teams that struggle:**
+- ❌ Delay decisions ("we'll refactor later")
+- ❌ Let technical debt accumulate
+- ❌ Work in silos without shared patterns
+- ❌ Only optimize when there's a crisis
+
+---
+
+## 🚀 Your next steps
+
+You don't need to address all 7 pain points today. Start with the ones that match your current stage:
+
+**If you're at 10-20 screens with 2-3 developers:**
+1. Consolidate state management (Pain Point #1)
+2. Set up team conventions (Pain Point #7)
+3. Start monitoring bundle size (Pain Point #2)
+
+**If you're at 30+ screens with 5+ developers:**
+1. Optimize performance (Pain Point #5)
+2. Fix navigation complexity (Pain Point #3)
+3. Improve CI/CD pipeline (Pain Point #6)
+
+**If you're scaling beyond 50 screens:**
+1. Audit and optimize everything above
+2. Consider architecture patterns (feature-based organization, micro-frontends, etc.)
+3. Invest in developer tooling and automation
+
+---
+
+Every successful app started small. The difference between apps that scale and apps that break isn't the code—it's the **decisions you make early** and the **patterns you establish** before problems become emergencies.
+
+Start addressing these pain points today, and your future self will thank you.
+
+---
+
+**#react-native #mobile-development #scaling #software-engineering #best-practices**
+
